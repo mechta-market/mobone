@@ -182,7 +182,7 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) List(ctx con
 	// total count
 	if params.WithTotalCount || params.OnlyCount {
 		if params.Distinct {
-			queryBuilder = queryBuilder.Column(`count(distinct ` + strings.Join(colNames, ",") + `)`)
+			queryBuilder = queryBuilder.Column(`count(distinct (` + strings.Join(colNames, ",") + `))`)
 		} else {
 			queryBuilder = queryBuilder.Column(`count(*)`)
 		}
