@@ -12,6 +12,7 @@ import (
 
 type ListModelI interface {
 	ListColumnMap() map[string]any
+	DefaultSortColumns() []string
 }
 
 type GetModelI interface {
@@ -32,6 +33,7 @@ type UpdateModelI interface {
 type ListParams struct {
 	Conditions           map[string]any
 	ConditionExpressions map[string][]any
+	Distinct             bool
 	Columns              []string
 	Page                 int64
 	PageSize             int64
@@ -156,9 +158,34 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) List(ctx con
 
 	var totalCount int64
 
+	listItemInstance := s.ListModelConstructor()
+
+	// construct column names
+	allowedColMap := listItemInstance.ListColumnMap()
+	colNames := make([]string, 0, len(params.Columns))
+	if len(params.Columns) > 0 {
+		var ok bool
+		for _, colName := range params.Columns {
+			if _, ok = allowedColMap[colName]; ok {
+				colNames = append(colNames, colName)
+			}
+		}
+	} else {
+		for colName := range allowedColMap {
+			colNames = append(colNames, colName)
+		}
+	}
+	if len(colNames) == 0 {
+		return nil, 0, fmt.Errorf("no columns")
+	}
+
 	// total count
 	if params.WithTotalCount || params.OnlyCount {
-		queryBuilder = queryBuilder.Column(`count(*)`)
+		if params.Distinct {
+			queryBuilder = queryBuilder.Column(`count(distinct ` + strings.Join(colNames, ",") + `)`)
+		} else {
+			queryBuilder = queryBuilder.Column(`count(*)`)
+		}
 
 		query, args, err := queryBuilder.ToSql()
 		if err != nil {
@@ -190,23 +217,9 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) List(ctx con
 		queryBuilder = queryBuilder.RemoveColumns()
 	}
 
-	// columns
-	allowedColMap := s.ListModelConstructor().ListColumnMap()
-	colNames := make([]string, 0, len(params.Columns))
-	if len(params.Columns) > 0 {
-		var ok bool
-		for _, colName := range params.Columns {
-			if _, ok = allowedColMap[colName]; ok {
-				colNames = append(colNames, colName)
-			}
-		}
-	} else {
-		for colName := range allowedColMap {
-			colNames = append(colNames, colName)
-		}
-	}
-	if len(colNames) == 0 {
-		return nil, 0, fmt.Errorf("no columns")
+	// apply columns
+	if params.Distinct {
+		queryBuilder = queryBuilder.Distinct()
 	}
 	queryBuilder = queryBuilder.Columns(colNames...)
 
@@ -216,7 +229,12 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) List(ctx con
 	}
 
 	// sort
-	if len(params.Sort) > 0 {
+	if params.Sort == nil {
+		sortColumns := listItemInstance.DefaultSortColumns()
+		if len(sortColumns) > 0 {
+			queryBuilder = queryBuilder.OrderBy(sortColumns...)
+		}
+	} else if len(params.Sort) > 0 {
 		queryBuilder = queryBuilder.OrderBy(params.Sort...)
 	}
 
