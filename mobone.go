@@ -123,6 +123,43 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Update(ctx c
 	return nil
 }
 
+func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Upsert(ctx context.Context, m UpdateModel) error {
+	pkColumnMap := m.PKColumnMap()
+	pkColumnNames := make([]string, 0, len(pkColumnMap))
+	for k := range pkColumnMap {
+		pkColumnNames = append(pkColumnNames, k)
+	}
+
+	updateColumnMap := m.UpdateColumnMap()
+	updateColumnNames := make([]string, 0, len(updateColumnMap))
+	updateColumnValues := make([]any, 0, len(updateColumnMap))
+	for k, v := range updateColumnMap {
+		updateColumnNames = append(updateColumnNames, k)
+		updateColumnValues = append(updateColumnValues, v)
+	}
+
+	insertColumnMap := m.UpdateColumnMap()
+	for k, v := range pkColumnMap {
+		insertColumnMap[k] = v
+	}
+
+	queryBuilder := s.QB.Insert(s.TableName).
+		SetMap(insertColumnMap).
+		Suffix(`ON CONFLICT (`+strings.Join(pkColumnNames, ",")+`) DO UPDATE SET `+strings.Join(updateColumnNames, " = ?, ")+` = ?`, updateColumnValues...)
+
+	query, args, err := queryBuilder.ToSql()
+	if err != nil {
+		return fmt.Errorf("fail to build query: %w", err)
+	}
+
+	_, err = s.Con.Exec(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("fail to exec: %w", err)
+	}
+
+	return nil
+}
+
 func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Delete(ctx context.Context, m UpdateModel) error {
 	queryBuilder := s.QB.Delete(s.TableName)
 
