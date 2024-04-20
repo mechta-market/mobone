@@ -30,6 +30,11 @@ type UpdateModelI interface {
 	PKColumnMap() map[string]any
 }
 
+type UpdateCreateModelI interface {
+	UpdateModelI
+	CreateModelI
+}
+
 type ListParams struct {
 	Conditions           map[string]any
 	ConditionExpressions map[string][]any
@@ -123,7 +128,7 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Update(ctx c
 	return nil
 }
 
-func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Upsert(ctx context.Context, m UpdateModel) error {
+func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) UpdateOrCreate(ctx context.Context, m UpdateCreateModelI) error {
 	pkColumnMap := m.PKColumnMap()
 	pkColumnNames := make([]string, 0, len(pkColumnMap))
 	for k := range pkColumnMap {
@@ -138,14 +143,38 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Upsert(ctx c
 		updateColumnValues = append(updateColumnValues, v)
 	}
 
-	insertColumnMap := m.UpdateColumnMap()
+	queryBuilder := s.QB.Insert(s.TableName).
+		SetMap(m.CreateColumnMap()).
+		Suffix(`ON CONFLICT (`+strings.Join(pkColumnNames, ",")+`) DO UPDATE SET `+strings.Join(updateColumnNames, " = ?, ")+` = ?`, updateColumnValues...)
+
+	query, args, err := queryBuilder.ToSql()
+	if err != nil {
+		return fmt.Errorf("fail to build query: %w", err)
+	}
+
+	_, err = s.Con.Exec(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("fail to exec: %w", err)
+	}
+
+	return nil
+}
+
+func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) CreateIfNotExist(ctx context.Context, m UpdateCreateModelI) error {
+	pkColumnMap := m.PKColumnMap()
+	pkColumnNames := make([]string, 0, len(pkColumnMap))
+	for k := range pkColumnMap {
+		pkColumnNames = append(pkColumnNames, k)
+	}
+
+	insertColumnMap := m.CreateColumnMap()
 	for k, v := range pkColumnMap {
 		insertColumnMap[k] = v
 	}
 
 	queryBuilder := s.QB.Insert(s.TableName).
 		SetMap(insertColumnMap).
-		Suffix(`ON CONFLICT (`+strings.Join(pkColumnNames, ",")+`) DO UPDATE SET `+strings.Join(updateColumnNames, " = ?, ")+` = ?`, updateColumnValues...)
+		Suffix(`ON CONFLICT (` + strings.Join(pkColumnNames, ",") + `) DO NOTHING`)
 
 	query, args, err := queryBuilder.ToSql()
 	if err != nil {
