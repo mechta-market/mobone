@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/Masterminds/squirrel"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -76,24 +75,9 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Create(ctx c
 	}
 
 	if len(returningColumnNames) > 0 {
-		var rows pgx.Rows
-
-		rows, err = s.Con.Query(ctx, query, args...)
+		err = s.Con.QueryRow(ctx, query, args...).Scan(returningFieldPointers...)
 		if err != nil {
 			return fmt.Errorf("fail to query: %w", err)
-		}
-		defer rows.Close()
-
-		if !rows.Next() {
-			if err = rows.Err(); err != nil {
-				return fmt.Errorf("rows.Err: %w", err)
-			}
-			return nil
-		}
-
-		err = rows.Scan(returningFieldPointers...)
-		if err != nil {
-			return fmt.Errorf("fail to scan: %w", err)
 		}
 	} else {
 		_, err = s.Con.Exec(ctx, query, args...)
@@ -258,22 +242,9 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) List(ctx con
 			return nil, 0, fmt.Errorf("fail to build query: %w", err)
 		}
 
-		rows, err := s.Con.Query(ctx, query, args...)
+		err = s.Con.QueryRow(ctx, query, args...).Scan(&totalCount)
 		if err != nil {
 			return nil, 0, fmt.Errorf("fail to query: %w", err)
-		}
-		defer rows.Close()
-
-		if !rows.Next() {
-			if err = rows.Err(); err != nil {
-				return nil, 0, fmt.Errorf("rows.Err: %w", err)
-			}
-			return nil, 0, fmt.Errorf("no rows for 'select count(*)' query")
-		}
-
-		err = rows.Scan(&totalCount)
-		if err != nil {
-			return nil, 0, fmt.Errorf("fail to scan: %w", err)
 		}
 
 		if params.OnlyCount {
@@ -364,22 +335,9 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Get(ctx cont
 		return false, fmt.Errorf("fail to build query: %w", err)
 	}
 
-	rows, err := s.Con.Query(ctx, query, args...)
+	err = s.Con.QueryRow(ctx, query, args...).Scan(colFieldPointers...)
 	if err != nil {
 		return false, fmt.Errorf("fail to query: %w", err)
-	}
-	defer rows.Close()
-
-	if !rows.Next() {
-		if err = rows.Err(); err != nil {
-			return false, fmt.Errorf("rows.Err: %w", err)
-		}
-		return false, nil
-	}
-
-	err = rows.Scan(colFieldPointers...)
-	if err != nil {
-		return false, fmt.Errorf("fail to scan: %w", err)
 	}
 
 	return true, nil
