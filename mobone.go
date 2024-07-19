@@ -2,10 +2,12 @@ package mobone
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Masterminds/squirrel"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -337,6 +339,9 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Get(ctx cont
 
 	err = s.Con.QueryRow(ctx, query, args...).Scan(colFieldPointers...)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
 		return false, fmt.Errorf("fail to query: %w", err)
 	}
 
