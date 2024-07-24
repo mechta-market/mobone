@@ -194,7 +194,7 @@ func (s *ModelStore) Delete(ctx context.Context, m UpdateModelI) error {
 	return nil
 }
 
-func (s *ModelStore) List(ctx context.Context, params ListParams, itemConstructor func() ListModelI) (int64, error) {
+func (s *ModelStore) List(ctx context.Context, params ListParams, itemConstructor func(add bool) ListModelI) (int64, error) {
 	queryBuilder := s.QB.Select().From(s.TableName)
 
 	// conditions
@@ -209,7 +209,7 @@ func (s *ModelStore) List(ctx context.Context, params ListParams, itemConstructo
 
 	var totalCount int64
 
-	listItemInstance := itemConstructor()
+	listItemInstance := itemConstructor(false)
 
 	// construct column names
 	allowedColMap := listItemInstance.ListColumnMap()
@@ -291,17 +291,13 @@ func (s *ModelStore) List(ctx context.Context, params ListParams, itemConstructo
 	}
 	defer rows.Close()
 
-	mm := make([]ListModelI, 0)
-
 	for rows.Next() {
-		m := itemConstructor()
+		m := itemConstructor(true)
 
 		err = rows.Scan(fieldPointersForColNames(m, colNames)...)
 		if err != nil {
 			return 0, fmt.Errorf("fail to scan: %w", err)
 		}
-
-		mm = append(mm, m)
 	}
 	if err = rows.Err(); err != nil {
 		return 0, fmt.Errorf("rows.Err: %w", err)
