@@ -48,14 +48,13 @@ type ListParams struct {
 	Sort                 []string
 }
 
-type ModelStore[ListModel ListModelI, GetModel GetModelI, CreateModel CreateModelI, UpdateModel UpdateModelI] struct {
-	Con                  *pgxpool.Pool
-	QB                   squirrel.StatementBuilderType
-	TableName            string
-	ListModelConstructor func() ListModel
+type ModelStore struct {
+	Con       *pgxpool.Pool
+	QB        squirrel.StatementBuilderType
+	TableName string
 }
 
-func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Create(ctx context.Context, m CreateModel) error {
+func (s *ModelStore) Create(ctx context.Context, m CreateModelI) error {
 	queryBuilder := s.QB.Insert(s.TableName).
 		SetMap(m.CreateColumnMap())
 
@@ -91,7 +90,7 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Create(ctx c
 	return nil
 }
 
-func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Update(ctx context.Context, m UpdateModel) error {
+func (s *ModelStore) Update(ctx context.Context, m UpdateModelI) error {
 	queryBuilder := s.QB.Update(s.TableName).
 		SetMap(m.UpdateColumnMap())
 
@@ -114,7 +113,7 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Update(ctx c
 	return nil
 }
 
-func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) UpdateOrCreate(ctx context.Context, m UpdateCreateModelI) error {
+func (s *ModelStore) UpdateOrCreate(ctx context.Context, m UpdateCreateModelI) error {
 	pkColumnMap := m.PKColumnMap()
 	pkColumnNames := make([]string, 0, len(pkColumnMap))
 	for k := range pkColumnMap {
@@ -146,7 +145,7 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) UpdateOrCrea
 	return nil
 }
 
-func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) CreateIfNotExist(ctx context.Context, m UpdateCreateModelI) error {
+func (s *ModelStore) CreateIfNotExist(ctx context.Context, m UpdateCreateModelI) error {
 	pkColumnMap := m.PKColumnMap()
 	pkColumnNames := make([]string, 0, len(pkColumnMap))
 	for k := range pkColumnMap {
@@ -175,7 +174,7 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) CreateIfNotE
 	return nil
 }
 
-func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Delete(ctx context.Context, m UpdateModel) error {
+func (s *ModelStore) Delete(ctx context.Context, m UpdateModelI) error {
 	queryBuilder := s.QB.Delete(s.TableName)
 
 	for k, v := range m.PKColumnMap() {
@@ -195,7 +194,7 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Delete(ctx c
 	return nil
 }
 
-func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) List(ctx context.Context, params ListParams) ([]ListModel, int64, error) {
+func (s *ModelStore) List(ctx context.Context, params ListParams, itemConstructor func() ListModelI) (int64, error) {
 	queryBuilder := s.QB.Select().From(s.TableName)
 
 	// conditions
@@ -210,7 +209,7 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) List(ctx con
 
 	var totalCount int64
 
-	listItemInstance := s.ListModelConstructor()
+	listItemInstance := itemConstructor()
 
 	// construct column names
 	allowedColMap := listItemInstance.ListColumnMap()
@@ -228,7 +227,7 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) List(ctx con
 		}
 	}
 	if len(colNames) == 0 {
-		return nil, 0, fmt.Errorf("no columns")
+		return 0, fmt.Errorf("no columns")
 	}
 
 	// total count
@@ -241,16 +240,16 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) List(ctx con
 
 		query, args, err := queryBuilder.ToSql()
 		if err != nil {
-			return nil, 0, fmt.Errorf("fail to build query: %w", err)
+			return 0, fmt.Errorf("fail to build query: %w", err)
 		}
 
 		err = s.Con.QueryRow(ctx, query, args...).Scan(&totalCount)
 		if err != nil {
-			return nil, 0, fmt.Errorf("fail to query: %w", err)
+			return 0, fmt.Errorf("fail to query: %w", err)
 		}
 
 		if params.OnlyCount {
-			return nil, totalCount, nil
+			return totalCount, nil
 		}
 
 		queryBuilder = queryBuilder.RemoveColumns()
@@ -280,7 +279,7 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) List(ctx con
 	// build query
 	query, args, err := queryBuilder.ToSql()
 	if err != nil {
-		return nil, 0, fmt.Errorf("fail to build query: %w", err)
+		return 0, fmt.Errorf("fail to build query: %w", err)
 	}
 
 	//slog.Info("List query", "query", query, "args", args)
@@ -288,30 +287,30 @@ func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) List(ctx con
 	// execute query
 	rows, err := s.Con.Query(ctx, query, args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("fail to query: %w", err)
+		return 0, fmt.Errorf("fail to query: %w", err)
 	}
 	defer rows.Close()
 
-	mm := make([]ListModel, 0)
+	mm := make([]ListModelI, 0)
 
 	for rows.Next() {
-		m := s.ListModelConstructor()
+		m := itemConstructor()
 
 		err = rows.Scan(fieldPointersForColNames(m, colNames)...)
 		if err != nil {
-			return nil, 0, fmt.Errorf("fail to scan: %w", err)
+			return 0, fmt.Errorf("fail to scan: %w", err)
 		}
 
 		mm = append(mm, m)
 	}
 	if err = rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("rows.Err: %w", err)
+		return 0, fmt.Errorf("rows.Err: %w", err)
 	}
 
-	return mm, totalCount, nil
+	return totalCount, nil
 }
 
-func (s *ModelStore[ListModel, GetModel, CreateModel, UpdateModel]) Get(ctx context.Context, m GetModelI) (bool, error) {
+func (s *ModelStore) Get(ctx context.Context, m GetModelI) (bool, error) {
 	colMap := m.ListColumnMap()
 	colNames := make([]string, 0, len(colMap))
 	colFieldPointers := make([]any, 0, len(colMap))
