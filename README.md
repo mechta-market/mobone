@@ -3,8 +3,8 @@
 
 Пакет получает структуру через которую можно создавать, обновлять или удалять записи в базе
 Для структур предусмотрены следующие интерфейсы:
-- ListModelI для поиска товаров (ListParams какие поля вернуть, DefaultSortColumns сортировка)
-- GetModelI для получения одного товара (ListParams какие поля вернуть, PKColumnMap primary поля, по ним идет поиск)
+- ListModelI для поиска товаров (ListColumnMap какие поля вернуть, DefaultSortColumns сортировка)
+- GetModelI для получения одного товара (ListColumnMap какие поля вернуть, PKColumnMap primary поля, по ним идет поиск)
 - CreateModelI для создания записи (CreateColumnMap какие поля записать в базу, ReturningColumnMap какие поля должны вернуться)
 - UpdateModelI для обновления записи (UpdateColumnMap, какие поля обновить, PKColumnMap primary поля по которым будет поиск)
 
@@ -162,7 +162,7 @@ modelStore := mobone.ModelStore{pgxPool, queryBuilder, "tableName"}
 
 err := modelStore.Update(context.Background(), upsertModel)
 ```
-обновление происходит по полям указанным в PKColumnMap()
+Для обновления, поиск записи производится по полям указанным в PKColumnMap()
 
 ### Удаление записи
 ```go
@@ -174,4 +174,4 @@ deleteModel := &model.Upsert{
 
 err := modelStore.Delete(context.Background(), deleteModel)
 ```
-удаление производится по полям указанным в PKColumnMap()
+Для удаления, поиск записи производится по полям указанным в PKColumnMap()

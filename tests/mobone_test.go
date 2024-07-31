@@ -3,15 +3,17 @@ package tests
 import (
 	"context"
 	"fmt"
-	"github.com/Masterminds/squirrel"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/mechta-market/mobone/v2"
-	"github.com/mechta-market/mobone/v2/tests/model"
-	"github.com/stretchr/testify/assert"
 	"log"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/Masterminds/squirrel"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/assert"
+
+	"github.com/mechta-market/mobone/v2"
+	"github.com/mechta-market/mobone/v2/tests/model"
 )
 
 var pgxPool *pgxpool.Pool
@@ -38,7 +40,7 @@ func initDB() error {
 	}
 
 	var err error
-	pgxPool, err = pgxpool.New(context.Background(), connDsn)
+	pgxPool, err = pgxpool.New(context.Background(), connDsn+"/postgres")
 
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v\n", err)
