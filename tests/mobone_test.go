@@ -15,6 +15,8 @@ import (
 	"github.com/mechta-market/mobone/v2/tests/model"
 )
 
+const tableName = "tests"
+
 var dbCon *Con
 var queryBuilder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
@@ -79,7 +81,7 @@ func initSchema(con *Con) error {
 	ctx := context.Background()
 
 	_, err := con.pool.Exec(ctx, `
-		CREATE TABLE tests (
+		CREATE TABLE `+tableName+` (
 		    id SERIAL PRIMARY KEY,
 		    created_at timestamptz not null default now(),
 		    updated_at timestamptz not null default now(),
@@ -96,7 +98,7 @@ func initSchema(con *Con) error {
 }
 
 func TestCreate(t *testing.T) {
-	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE tests RESTART IDENTITY")
+	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -104,7 +106,7 @@ func TestCreate(t *testing.T) {
 	modelStore := mobone.ModelStore{
 		Con:       dbCon.pool,
 		QB:        queryBuilder,
-		TableName: "tests",
+		TableName: tableName,
 	}
 
 	item := &model.Select{
@@ -155,7 +157,7 @@ func TestCreate(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
-	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE tests RESTART IDENTITY")
+	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -163,7 +165,7 @@ func TestUpdate(t *testing.T) {
 	modelStore := mobone.ModelStore{
 		Con:       dbCon.pool,
 		QB:        queryBuilder,
-		TableName: "tests",
+		TableName: tableName,
 	}
 
 	item := &model.Select{
@@ -214,7 +216,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
-	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE tests RESTART IDENTITY")
+	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -222,7 +224,7 @@ func TestList(t *testing.T) {
 	modelStore := mobone.ModelStore{
 		Con:       dbCon.pool,
 		QB:        queryBuilder,
-		TableName: "tests",
+		TableName: tableName,
 	}
 
 	item := &model.Select{
@@ -269,7 +271,7 @@ func TestList(t *testing.T) {
 }
 
 func TestListWithOnlyCount(t *testing.T) {
-	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE tests RESTART IDENTITY")
+	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -277,7 +279,7 @@ func TestListWithOnlyCount(t *testing.T) {
 	modelStore := mobone.ModelStore{
 		Con:       dbCon.pool,
 		QB:        queryBuilder,
-		TableName: "tests",
+		TableName: tableName,
 	}
 
 	item := &model.Select{
@@ -301,7 +303,7 @@ func TestListWithOnlyCount(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE tests RESTART IDENTITY")
+	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -309,7 +311,7 @@ func TestDelete(t *testing.T) {
 	modelStore := mobone.ModelStore{
 		Con:       dbCon.pool,
 		QB:        queryBuilder,
-		TableName: "tests",
+		TableName: tableName,
 	}
 
 	item := &model.Select{
