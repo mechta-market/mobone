@@ -9,242 +9,329 @@ import (
 	"time"
 
 	"github.com/Masterminds/squirrel"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mechta-market/mobone/v2"
 	"github.com/mechta-market/mobone/v2/tests/model"
 )
 
-var pgxPool *pgxpool.Pool
-var queryBuilder squirrel.StatementBuilderType
-var dbName = "mobone"
+var dbCon *Con
+var queryBuilder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
 func TestMain(m *testing.M) {
-	code := 0
-	err := initDB()
-
-	defer pgxPool.Close()
-
-	if err == nil {
-		code = m.Run()
+	dbName := os.Getenv("TEST_DB_NAME")
+	if dbName == "" {
+		dbName = "mobone"
 	}
 
-	os.Exit(code)
+	err := recreateDB(dbName)
+	if err != nil {
+		log.Printf("recreateDB: %v\n", err)
+		os.Exit(1)
+	}
+
+	dbCon, err = NewCon(dbName)
+	if err != nil {
+		log.Printf("NewCon: %v\n", err)
+		os.Exit(1)
+	}
+
+	err = initSchema(dbCon)
+	if err != nil {
+		log.Printf("initSchema: %v\n", err)
+		os.Exit(1)
+	}
+
+	// RUN TESTS
+	exitCode := m.Run()
+
+	dbCon.Close()
+
+	os.Exit(exitCode)
 }
 
-func initDB() error {
-	connDsn := os.Getenv("DATABASE_URL")
-	if connDsn == "" {
-		connDsn = "postgres://default:passw0rd@postgres_test:5432"
+func recreateDB(dbName string) error {
+	ctx := context.Background()
+
+	// recreate database
+	{
+		con, err := NewCon("")
+		if err != nil {
+			return fmt.Errorf("NewCon: %w", err)
+		}
+		defer con.Close()
+
+		_, err = con.pool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+		if err != nil {
+			return fmt.Errorf("unable to drop database: %w", err)
+		}
+
+		_, err = con.pool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", dbName))
+		if err != nil {
+			return fmt.Errorf("unable to create database: %w", err)
+		}
 	}
 
-	var err error
-	pgxPool, err = pgxpool.New(context.Background(), connDsn+"/postgres")
+	return nil
+}
 
+func initSchema(con *Con) error {
+	ctx := context.Background()
+
+	_, err := con.pool.Exec(ctx, `
+		CREATE TABLE tests (
+		    id SERIAL PRIMARY KEY,
+		    created_at timestamptz not null default now(),
+		    updated_at timestamptz not null default now(),
+		    name text not null default '',
+		    flag boolean not null default false,
+		    contact jsonb not null default '{}'
+		)
+	`)
 	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
+		return fmt.Errorf("unable to create table: %w", err)
 	}
-
-	queryBuilder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
-
-	_, err = pgxPool.Exec(context.Background(), fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
-
-	if err != nil {
-		log.Printf("Unable to drop database: %v\n", err)
-		return err
-	}
-	log.Printf("Database %s dropped\n", dbName)
-
-	_, err = pgxPool.Exec(context.Background(), fmt.Sprintf("CREATE DATABASE %s", dbName))
-	if err != nil {
-		log.Printf("Unable to create database: %v\n", err)
-		return err
-	}
-	log.Printf("Database %s created\n", dbName)
-	pgxPool.Close()
-
-	pgxPool, err = pgxpool.New(context.Background(), connDsn+"/"+dbName)
-	if err != nil {
-		log.Printf("Unable to connect to database: %v\n", err)
-	}
-
-	createTable := "CREATE TABLE tests (id SERIAL PRIMARY KEY, name varchar(255), test boolean, json json, created_at timestamp, updated_at timestamp)"
-
-	_, err = pgxPool.Exec(context.Background(), createTable)
-	if err != nil {
-		log.Printf("Unable to create table: %v\n", err)
-		return err
-	}
-
-	log.Print("Table tests created\n")
 
 	return nil
 }
 
 func TestCreate(t *testing.T) {
-	upsertModel := &model.Upsert{
-		Name:      "Test Model",
-		Test:      true,
-		Json:      `{"test": true}`,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE tests RESTART IDENTITY")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	modelStore := mobone.ModelStore{
+		Con:       dbCon.pool,
+		QB:        queryBuilder,
+		TableName: "tests",
 	}
 
-	modelStore := mobone.ModelStore{pgxPool, queryBuilder, "tests"}
+	item := &model.Select{
+		Name: "Test Model",
+		Flag: true,
+		Contact: model.Contact{
+			Phone: "123456789",
+			Email: "test@example.com",
+		},
+	}
 
-	err := modelStore.Create(context.Background(), upsertModel)
+	createModel := &model.Upsert{
+		Name:    &item.Name,
+		Flag:    &item.Flag,
+		Contact: &item.Contact,
+	}
+	err = modelStore.Create(ctx, createModel)
+	require.NoError(t, err)
+	require.Greater(t, createModel.PKId, 0)
+	item.Id = createModel.PKId
 
-	assert.NoErrorf(t, err, "ModelStore.Get: %w", err)
+	dbItem := &model.Select{Id: item.Id}
+	found, err := modelStore.Get(ctx, dbItem)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.WithinDuration(t, time.Now(), dbItem.CreatedAt, 30*time.Millisecond)
+	require.WithinDuration(t, time.Now(), dbItem.UpdatedAt, 30*time.Millisecond)
+	dbItem.CreatedAt = time.Time{}
+	dbItem.UpdatedAt = time.Time{}
+	require.Equal(t, item, dbItem)
 
-	m := &model.Select{Id: 1}
-	found, err := modelStore.Get(context.Background(), m)
-	assert.NoErrorf(t, err, "ModelStore.Get: %w", err)
-	assert.True(t, found)
-	assert.Equal(t, true, m.Test)
+	dbItems := make([]*model.Select, 0, 3)
+	_, err = modelStore.List(ctx, mobone.ListParams{
+		PageSize: 10,
+	}, func(add bool) mobone.ListModelI {
+		x := &model.Select{}
+		if add {
+			dbItems = append(dbItems, x)
+		}
+		return x
+	})
+	require.NoError(t, err)
+	require.Len(t, dbItems, 1)
+	dbItem = dbItems[0]
+	dbItem.CreatedAt = time.Time{}
+	dbItem.UpdatedAt = time.Time{}
+	require.Equal(t, item, dbItem)
 }
 
 func TestUpdate(t *testing.T) {
-	upsertModel := &model.Upsert{
-		Id:   1,
+	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE tests RESTART IDENTITY")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	modelStore := mobone.ModelStore{
+		Con:       dbCon.pool,
+		QB:        queryBuilder,
+		TableName: "tests",
+	}
+
+	item := &model.Select{
 		Name: "Test Model",
-		Test: false,
-		Json: `{"test": false}`,
+		Flag: true,
+		Contact: model.Contact{
+			Phone: "123456789",
+			Email: "test@example.com",
+		},
 	}
 
-	modelStore := mobone.ModelStore{pgxPool, queryBuilder, "tests"}
-
-	err := modelStore.Update(context.Background(), upsertModel)
-
-	assert.NoErrorf(t, err, "ModelStore.Get: %w", err)
-
-	m := &model.Select{Id: 1}
-	found, err := modelStore.Get(context.Background(), m)
-	assert.NoErrorf(t, err, "ModelStore.Get: %w", err)
-	assert.True(t, found)
-	assert.Equal(t, false, m.Test)
-}
-
-func TestGet(t *testing.T) {
-	m := &model.Select{
-		Id: 1,
+	createModel := &model.Upsert{
+		Name:    &item.Name,
+		Flag:    &item.Flag,
+		Contact: &item.Contact,
 	}
+	err = modelStore.Create(ctx, createModel)
+	require.NoError(t, err)
+	item.Id = createModel.PKId
 
-	modelStore := mobone.ModelStore{pgxPool, queryBuilder, "tests"}
+	item.UpdatedAt = time.Now().Add(-time.Hour)
+	item.Name = "Test Model changed"
+	item.Flag = false
+	item.Contact.Phone = "987654321"
+	item.Contact.Email = "changed@example.com"
 
-	found, err := modelStore.Get(context.Background(), m)
+	updateModel := &model.Upsert{
+		PKId:      item.Id,
+		UpdatedAt: &item.UpdatedAt,
+		Name:      &item.Name,
+		Flag:      &item.Flag,
+		Contact:   &item.Contact,
+	}
+	err = modelStore.Update(ctx, updateModel)
+	require.NoError(t, err)
+	require.Greater(t, updateModel.PKId, 0)
+	item.Id = updateModel.PKId
 
-	assert.NoErrorf(t, err, "ModelStore.Get: %w", err)
-	assert.True(t, found)
-	assert.Equal(t, "Test Model", m.Name)
+	dbItem := &model.Select{Id: item.Id}
+	found, err := modelStore.Get(ctx, dbItem)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.WithinDuration(t, time.Now(), dbItem.CreatedAt, 30*time.Millisecond)
+	require.WithinDuration(t, item.UpdatedAt, dbItem.UpdatedAt, 30*time.Millisecond)
+	dbItem.CreatedAt = time.Time{}
+	dbItem.UpdatedAt = item.UpdatedAt
+	require.Equal(t, item, dbItem)
 }
 
 func TestList(t *testing.T) {
-	conditions := map[string]any{
-		"Name": "Test Model",
+	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE tests RESTART IDENTITY")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	modelStore := mobone.ModelStore{
+		Con:       dbCon.pool,
+		QB:        queryBuilder,
+		TableName: "tests",
 	}
-	conditionExps := map[string][]any{}
 
-	items := make([]*model.Select, 0)
-
-	modelStore := mobone.ModelStore{pgxPool, queryBuilder, "tests"}
-
-	totalCount, err := modelStore.List(context.Background(), mobone.ListParams{
-		Conditions:           conditions,
-		ConditionExpressions: conditionExps,
-		Page:                 0,
-		PageSize:             5,
-		WithTotalCount:       false,
-		OnlyCount:            false,
-		Sort:                 []string{"id"},
-	}, func(add bool) mobone.ListModelI {
-		item := &model.Select{}
-		if add {
-			items = append(items, item)
-		}
-		return item
-	})
-
-	assert.NoErrorf(t, err, "ModelStore.List: %w", err)
-	assert.Equal(t, 1, len(items))
-	assert.Equal(t, int64(0), totalCount)
-	assert.Equal(t, "Test Model", items[0].Name)
-}
-
-func TestListWithTotalCount(t *testing.T) {
-	conditions := map[string]any{
-		"Name": "Test Model",
+	item := &model.Select{
+		Name: "Test Model",
 	}
-	conditionExps := map[string][]any{}
 
-	items := make([]*model.Select, 0)
+	createModel := &model.Upsert{
+		Name: &item.Name,
+	}
+	err = modelStore.Create(ctx, createModel)
+	require.NoError(t, err)
+	item.Id = createModel.PKId
 
-	modelStore := mobone.ModelStore{pgxPool, queryBuilder, "tests"}
+	item2 := &model.Select{
+		Name: "Test Model 2",
+	}
 
-	totalCount, err := modelStore.List(context.Background(), mobone.ListParams{
-		Conditions:           conditions,
-		ConditionExpressions: conditionExps,
-		Page:                 0,
-		PageSize:             5,
-		WithTotalCount:       true,
-		OnlyCount:            false,
-		Sort:                 []string{"id"},
+	createModel = &model.Upsert{
+		Name: &item2.Name,
+	}
+	err = modelStore.Create(ctx, createModel)
+	require.NoError(t, err)
+	item2.Id = createModel.PKId
+
+	dbItems := make([]*model.Select, 0, 3)
+	_, err = modelStore.List(ctx, mobone.ListParams{
+		PageSize: 10,
+		Sort:     []string{"id"},
 	}, func(add bool) mobone.ListModelI {
-		item := &model.Select{}
+		x := &model.Select{}
 		if add {
-			items = append(items, item)
+			dbItems = append(dbItems, x)
 		}
-		return item
+		return x
 	})
-
-	assert.NoErrorf(t, err, "ModelStore.List: %w", err)
-	assert.Equal(t, 1, len(items))
-	assert.Equal(t, int64(1), totalCount)
-	assert.Equal(t, "Test Model", items[0].Name)
+	require.NoError(t, err)
+	require.Len(t, dbItems, 2)
+	dbItems[0].CreatedAt = time.Time{}
+	dbItems[0].UpdatedAt = time.Time{}
+	dbItems[1].CreatedAt = time.Time{}
+	dbItems[1].UpdatedAt = time.Time{}
+	require.Equal(t, item, dbItems[0])
+	require.Equal(t, item2, dbItems[1])
 }
 
 func TestListWithOnlyCount(t *testing.T) {
-	conditions := map[string]any{
-		"Name": "Test Model",
+	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE tests RESTART IDENTITY")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	modelStore := mobone.ModelStore{
+		Con:       dbCon.pool,
+		QB:        queryBuilder,
+		TableName: "tests",
 	}
-	conditionExps := map[string][]any{}
 
-	items := make([]*model.Select, 0)
+	item := &model.Select{
+		Name: "Test Model",
+	}
 
-	modelStore := mobone.ModelStore{pgxPool, queryBuilder, "tests"}
+	createModel := &model.Upsert{
+		Name: &item.Name,
+	}
+	err = modelStore.Create(ctx, createModel)
+	require.NoError(t, err)
+	item.Id = createModel.PKId
 
-	totalCount, err := modelStore.List(context.Background(), mobone.ListParams{
-		Conditions:           conditions,
-		ConditionExpressions: conditionExps,
-		Page:                 0,
-		PageSize:             5,
-		WithTotalCount:       true,
-		OnlyCount:            true,
-		Sort:                 []string{"id"},
+	listCount, err := modelStore.List(ctx, mobone.ListParams{
+		OnlyCount: true,
 	}, func(add bool) mobone.ListModelI {
-		item := &model.Select{}
-		if add {
-			items = append(items, item)
-		}
-		return item
+		return &model.Select{}
 	})
-
-	assert.NoErrorf(t, err, "ModelStore.List: %w", err)
-	assert.Equal(t, 0, len(items))
-	assert.Equal(t, int64(1), totalCount)
+	require.NoError(t, err)
+	require.Equal(t, 1, int(listCount))
 }
 
 func TestDelete(t *testing.T) {
-	modelStore := mobone.ModelStore{pgxPool, queryBuilder, "tests"}
+	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE tests RESTART IDENTITY")
+	require.NoError(t, err)
 
-	deleteModel := &model.Upsert{
-		Id: 1,
+	ctx := context.Background()
+
+	modelStore := mobone.ModelStore{
+		Con:       dbCon.pool,
+		QB:        queryBuilder,
+		TableName: "tests",
 	}
 
-	err := modelStore.Delete(context.Background(), deleteModel)
-	assert.NoErrorf(t, err, "ModelStore.Delete: %w", err)
+	item := &model.Select{
+		Name: "Test Model",
+	}
 
-	m := &model.Select{Id: 1}
-	found, err := modelStore.Get(context.Background(), m)
-	assert.False(t, found)
+	createModel := &model.Upsert{
+		Name: &item.Name,
+	}
+	err = modelStore.Create(ctx, createModel)
+	require.NoError(t, err)
+	item.Id = createModel.PKId
+
+	deleteModel := &model.Upsert{PKId: item.Id}
+	err = modelStore.Delete(ctx, deleteModel)
+	require.NoError(t, err)
+
+	listCount, err := modelStore.List(ctx, mobone.ListParams{
+		OnlyCount: true,
+	}, func(add bool) mobone.ListModelI {
+		return &model.Select{}
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0, int(listCount))
 }
