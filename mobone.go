@@ -48,8 +48,6 @@ type ListParams struct {
 	Sort                 []string
 }
 
-type JsonMergeType any
-
 type ModelStore struct {
 	Con       *pgxpool.Pool
 	QB        squirrel.StatementBuilderType

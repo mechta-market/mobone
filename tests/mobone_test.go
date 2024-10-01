@@ -416,4 +416,21 @@ func TestJsonMerge(t *testing.T) {
 	dbItem.CreatedAt = time.Time{}
 	dbItem.UpdatedAt = time.Time{}
 	require.Equal(t, item, dbItem)
+
+	item.Contact.Email = ""
+
+	err = modelStore.Update(ctx, &model.Upsert{
+		PKId: item.Id,
+		Contact: &model.ContactEdit{
+			Email: &item.Contact.Email,
+		},
+	})
+	require.NoError(t, err)
+
+	dbItem = &model.Select{Id: item.Id}
+	_, err = modelStore.Get(ctx, dbItem)
+	require.NoError(t, err)
+	dbItem.CreatedAt = time.Time{}
+	dbItem.UpdatedAt = time.Time{}
+	require.Equal(t, item, dbItem)
 }
