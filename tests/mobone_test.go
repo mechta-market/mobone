@@ -119,9 +119,12 @@ func TestCreate(t *testing.T) {
 	}
 
 	createModel := &model.Upsert{
-		Name:    &item.Name,
-		Flag:    &item.Flag,
-		Contact: &item.Contact,
+		Name: &item.Name,
+		Flag: &item.Flag,
+		Contact: &model.ContactEdit{
+			Phone: &item.Contact.Phone,
+			Email: &item.Contact.Email,
+		},
 	}
 	err = modelStore.Create(ctx, createModel)
 	require.NoError(t, err)
@@ -178,9 +181,12 @@ func TestUpdate(t *testing.T) {
 	}
 
 	createModel := &model.Upsert{
-		Name:    &item.Name,
-		Flag:    &item.Flag,
-		Contact: &item.Contact,
+		Name: &item.Name,
+		Flag: &item.Flag,
+		Contact: &model.ContactEdit{
+			Phone: &item.Contact.Phone,
+			Email: &item.Contact.Email,
+		},
 	}
 	err = modelStore.Create(ctx, createModel)
 	require.NoError(t, err)
@@ -197,7 +203,10 @@ func TestUpdate(t *testing.T) {
 		UpdatedAt: &item.UpdatedAt,
 		Name:      &item.Name,
 		Flag:      &item.Flag,
-		Contact:   &item.Contact,
+		Contact: &model.ContactEdit{
+			Phone: &item.Contact.Phone,
+			Email: &item.Contact.Email,
+		},
 	}
 	err = modelStore.Update(ctx, updateModel)
 	require.NoError(t, err)
@@ -336,4 +345,75 @@ func TestDelete(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 0, int(listCount))
+}
+
+func TestJsonMerge(t *testing.T) {
+	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	modelStore := mobone.ModelStore{
+		Con:       dbCon.pool,
+		QB:        queryBuilder,
+		TableName: tableName,
+	}
+
+	item := &model.Select{
+		Name: "Name",
+		Contact: model.Contact{
+			Email: "test@example.com",
+		},
+	}
+
+	createModel := &model.Upsert{
+		Name: &item.Name,
+		Contact: &model.ContactEdit{
+			Email: &item.Contact.Email,
+		},
+	}
+	err = modelStore.Create(ctx, createModel)
+	require.NoError(t, err)
+	item.Id = createModel.PKId
+
+	dbItem := &model.Select{Id: item.Id}
+	_, err = modelStore.Get(ctx, dbItem)
+	require.NoError(t, err)
+	dbItem.CreatedAt = time.Time{}
+	dbItem.UpdatedAt = time.Time{}
+	require.Equal(t, item, dbItem)
+
+	item.Contact.Phone = "123456789"
+
+	err = modelStore.Update(ctx, &model.Upsert{
+		PKId: item.Id,
+		Contact: &model.ContactEdit{
+			Phone: &item.Contact.Phone,
+		},
+	})
+	require.NoError(t, err)
+
+	dbItem = &model.Select{Id: item.Id}
+	_, err = modelStore.Get(ctx, dbItem)
+	require.NoError(t, err)
+	dbItem.CreatedAt = time.Time{}
+	dbItem.UpdatedAt = time.Time{}
+	require.Equal(t, item, dbItem)
+
+	item.Contact.Email = "changed@example.com"
+
+	err = modelStore.Update(ctx, &model.Upsert{
+		PKId: item.Id,
+		Contact: &model.ContactEdit{
+			Email: &item.Contact.Email,
+		},
+	})
+	require.NoError(t, err)
+
+	dbItem = &model.Select{Id: item.Id}
+	_, err = modelStore.Get(ctx, dbItem)
+	require.NoError(t, err)
+	dbItem.CreatedAt = time.Time{}
+	dbItem.UpdatedAt = time.Time{}
+	require.Equal(t, item, dbItem)
 }

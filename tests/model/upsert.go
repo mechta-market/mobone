@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/Masterminds/squirrel"
+)
 
 type Upsert struct {
 	PKId int
@@ -8,7 +12,7 @@ type Upsert struct {
 	UpdatedAt *time.Time
 	Name      *string
 	Flag      *bool
-	Contact   *Contact
+	Contact   *ContactEdit
 }
 
 func (m *Upsert) CreateColumnMap() map[string]any {
@@ -37,6 +41,9 @@ func (m *Upsert) UpdateColumnMap() map[string]any {
 	result := m.CreateColumnMap()
 	for k := range m.PKColumnMap() {
 		delete(result, k)
+	}
+	if v, ok := result["contact"]; ok {
+		result["contact"] = squirrel.Expr("contact || ?", v)
 	}
 	return result
 }
