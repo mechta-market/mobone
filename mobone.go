@@ -128,7 +128,7 @@ func (s *ModelStore) UpdateOrCreate(ctx context.Context, m UpdateCreateModelI) e
 		updateColumnValues = append(updateColumnValues, v)
 	}
 
-	queryBuilder := s.QB.Insert(s.TableName).
+	queryBuilder := s.QB.Insert(s.TableName+" as t").
 		SetMap(m.CreateColumnMap()).
 		Suffix(`ON CONFLICT (`+strings.Join(pkColumnNames, ",")+`) DO UPDATE SET `+strings.Join(updateColumnNames, " = ?, ")+` = ?`, updateColumnValues...)
 
