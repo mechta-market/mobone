@@ -36,6 +36,10 @@ type UpdateCreateModelI interface {
 	CreateModelI
 }
 
+type DeleteModelI interface {
+	PKColumnMap() map[string]any
+}
+
 type ListParams struct {
 	Conditions           map[string]any
 	ConditionExpressions map[string][]any
@@ -103,7 +107,7 @@ func (s *ModelStore) Update(ctx context.Context, m UpdateModelI) error {
 		return fmt.Errorf("fail to build query: %w", err)
 	}
 
-	//fmt.Println(query, args)
+	// fmt.Println(query, args)
 
 	_, err = s.Con.Exec(ctx, query, args...)
 	if err != nil {
@@ -174,7 +178,7 @@ func (s *ModelStore) CreateIfNotExist(ctx context.Context, m UpdateCreateModelI)
 	return nil
 }
 
-func (s *ModelStore) Delete(ctx context.Context, m UpdateModelI) error {
+func (s *ModelStore) Delete(ctx context.Context, m DeleteModelI) error {
 	queryBuilder := s.QB.Delete(s.TableName)
 
 	for k, v := range m.PKColumnMap() {
@@ -282,7 +286,7 @@ func (s *ModelStore) List(ctx context.Context, params ListParams, itemConstructo
 		return 0, fmt.Errorf("fail to build query: %w", err)
 	}
 
-	//slog.Info("List query", "query", query, "args", args)
+	// slog.Info("List query", "query", query, "args", args)
 
 	// execute query
 	rows, err := s.Con.Query(ctx, query, args...)
