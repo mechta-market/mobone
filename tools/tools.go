@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-func ConstructSortColumns(allowedFields []string, inputSort []string) []string {
+func ConstructSortColumns(allowedFields map[string]string, inputSort []string) []string {
 	if allowedFields == nil || len(allowedFields) == 0 {
 		return nil
 	}
@@ -14,21 +14,26 @@ func ConstructSortColumns(allowedFields []string, inputSort []string) []string {
 
 	result := make([]string, 0, len(inputSort))
 	var isDesc bool
+	var expr string
+	var ok bool
 
 	for _, inputV := range inputSort {
 		isDesc = strings.HasPrefix(inputV, "-")
 		inputV = strings.TrimLeft(inputV, "-")
 
-		for _, allowedV := range allowedFields {
-			if inputV == allowedV {
+		if expr, ok = allowedFields[inputV]; ok {
+			if expr != "" {
 				if isDesc {
-					result = append(result, inputV+" desc")
+					result = append(result, expr+" desc")
 				} else {
-					result = append(result, inputV)
+					result = append(result, expr)
 				}
-				break
 			}
 		}
+	}
+
+	if len(result) == 0 {
+		return nil
 	}
 
 	return result
