@@ -40,6 +40,14 @@ type DeleteModelI interface {
 	PKColumnMap() map[string]any
 }
 
+type WithListInterceptorI interface {
+	ListInterceptor(qb squirrel.SelectBuilder, params ListParams) squirrel.SelectBuilder
+}
+
+type WithGetInterceptorI interface {
+	GetInterceptor(qb squirrel.SelectBuilder) squirrel.SelectBuilder
+}
+
 type ListParams struct {
 	Conditions           map[string]any
 	ConditionExpressions map[string][]any
@@ -234,6 +242,10 @@ func (s *ModelStore) List(ctx context.Context, params ListParams, itemConstructo
 		return 0, fmt.Errorf("no columns")
 	}
 
+	if qbInterceptor, ok := listItemInstance.(WithListInterceptorI); ok && qbInterceptor != nil {
+		queryBuilder = qbInterceptor.ListInterceptor(queryBuilder, params)
+	}
+
 	// total count
 	if params.WithTotalCount || params.OnlyCount {
 		if params.Distinct {
@@ -329,6 +341,10 @@ func (s *ModelStore) Get(ctx context.Context, m GetModelI) (bool, error) {
 
 	for k, v := range m.PKColumnMap() {
 		queryBuilder = queryBuilder.Where(k+` = ?`, v)
+	}
+
+	if qbInterceptor, ok := m.(WithGetInterceptorI); ok && qbInterceptor != nil {
+		queryBuilder = qbInterceptor.GetInterceptor(queryBuilder)
 	}
 
 	query, args, err := queryBuilder.ToSql()

@@ -63,12 +63,12 @@ func recreateDB(dbName string) error {
 		}
 		defer con.Close()
 
-		_, err = con.pool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+		_, err = con.pool.Exec(ctx, fmt.Sprintf("drop database if exists %s", dbName))
 		if err != nil {
 			return fmt.Errorf("unable to drop database: %w", err)
 		}
 
-		_, err = con.pool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", dbName))
+		_, err = con.pool.Exec(ctx, fmt.Sprintf("create database %s", dbName))
 		if err != nil {
 			return fmt.Errorf("unable to create database: %w", err)
 		}
@@ -98,7 +98,7 @@ func initSchema(con *Con) error {
 }
 
 func TestCreate(t *testing.T) {
-	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
+	_, err := dbCon.pool.Exec(context.Background(), "truncate table "+tableName+" RESTART IDENTITY")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -160,7 +160,7 @@ func TestCreate(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
-	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
+	_, err := dbCon.pool.Exec(context.Background(), "truncate table "+tableName+" RESTART IDENTITY")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -225,7 +225,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
-	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
+	_, err := dbCon.pool.Exec(context.Background(), "truncate table "+tableName+" RESTART IDENTITY")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -279,8 +279,48 @@ func TestList(t *testing.T) {
 	require.Equal(t, item2, dbItems[1])
 }
 
+func TestListWithInterceptor(t *testing.T) {
+	_, err := dbCon.pool.Exec(context.Background(), "truncate table "+tableName+" RESTART IDENTITY")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	modelStore := mobone.ModelStore{
+		Con:       dbCon.pool,
+		QB:        queryBuilder,
+		TableName: tableName,
+	}
+
+	item := &model.Select{
+		Name: "Test Model",
+	}
+
+	createModel := &model.Upsert{
+		Name: &item.Name,
+	}
+	err = modelStore.Create(ctx, createModel)
+	require.NoError(t, err)
+	item.Id = createModel.PKId
+
+	dbItems := make([]*model.Select, 0, 3)
+	_, err = modelStore.List(ctx, mobone.ListParams{
+		PageSize: 10,
+		Sort:     []string{"id"},
+		Columns:  []string{"id"}, // for interceptor
+	}, func(add bool) mobone.ListModelI {
+		x := &model.Select{}
+		if add {
+			dbItems = append(dbItems, x)
+		}
+		return x
+	})
+	require.NoError(t, err)
+	require.Len(t, dbItems, 1)
+	require.Equal(t, item.Id, dbItems[0].Id)
+}
+
 func TestListWithOnlyCount(t *testing.T) {
-	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
+	_, err := dbCon.pool.Exec(context.Background(), "truncate table "+tableName+" RESTART IDENTITY")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -312,7 +352,7 @@ func TestListWithOnlyCount(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
+	_, err := dbCon.pool.Exec(context.Background(), "truncate table "+tableName+" RESTART IDENTITY")
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -348,7 +388,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestJsonMerge(t *testing.T) {
-	_, err := dbCon.pool.Exec(context.Background(), "TRUNCATE TABLE "+tableName+" RESTART IDENTITY")
+	_, err := dbCon.pool.Exec(context.Background(), "truncate table "+tableName+" RESTART IDENTITY")
 	require.NoError(t, err)
 
 	ctx := context.Background()

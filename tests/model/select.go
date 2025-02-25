@@ -1,6 +1,12 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/Masterminds/squirrel"
+
+	"github.com/mechta-market/mobone/v2"
+)
 
 type Select struct {
 	Id        int
@@ -30,4 +36,12 @@ func (m *Select) PKColumnMap() map[string]any {
 
 func (m *Select) DefaultSortColumns() []string {
 	return []string{"id"}
+}
+
+func (m *Select) ListInterceptor(qb squirrel.SelectBuilder, params mobone.ListParams) squirrel.SelectBuilder {
+	if len(params.Columns) == 1 && params.Columns[0] == "id" {
+		qb = qb.CrossJoin("(select 7) as s")
+	}
+
+	return qb
 }
