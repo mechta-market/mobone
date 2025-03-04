@@ -58,6 +58,7 @@ type ListParams struct {
 	WithTotalCount       bool
 	OnlyCount            bool
 	Sort                 []string
+	CustomConditions     map[string]string
 }
 
 type ModelStore struct {
